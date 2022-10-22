@@ -1,0 +1,85 @@
+version: '3'
+
+services:
+  db:
+    image: mariadb
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    restart: always
+    volumes:
+      - db:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=_N0t_batman
+    env_file:
+      - db.env
+
+  app:
+    image: nextcloud:fpm-alpine
+    restart: always
+    volumes:
+      - nextcloud:/var/www/html:rw
+      #- data:/var/www/data:rw
+    environment:
+      - MYSQL_HOST=db
+    env_file:
+      - db.env
+    depends_on:
+      - db
+
+  web:
+    build: ./web
+    restart: always
+    volumes:
+      - nextcloud:/var/www/html:rw
+    environment:
+      - VIRTUAL_HOST=nextcloud.rpi.lan
+    depends_on:
+      - app
+    networks:
+      - proxy-tier
+      - default
+
+  proxy:
+    build: ./proxy
+    restart: always
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - certs:/etc/nginx/certs:ro
+      - vhost.d:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    networks:
+      - proxy-tier
+    depends_on:
+      - omgwtfssl
+
+  omgwtfssl:
+    image: omgwtfssl:armhf
+    build:
+      context: https://github.com/lil5/omgwtfssl.git
+      #args:
+       # - buildno: armhf
+       # - gitcommithash: de2a9ae
+    restart: "no"
+    volumes:
+      - certs:/certs
+    environment:
+      - SSL_SUBJECT=nextcloud.rpi.lan
+      - CA_SUBJECT=admin@rpi.lan
+      - SSL_KEY=/certs/nextcloud.rpi.lan.key
+      - SSL_CSR=/certs/nextcloud.rpi.lan.csr
+      - SSL_CERT=/certs/nextcloud.rpi.lan.crt
+      - SSL_EXPIRE=365
+    networks:
+      - proxy-tier
+
+volumes:
+  db:
+  nextcloud:
+  certs:
+  vhost.d:
+  html:
+
+networks:
+  proxy-tier:
